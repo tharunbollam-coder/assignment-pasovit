@@ -28,7 +28,7 @@ const registerUser = async (req, res, next) => {
     res.cookie('jwt', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV !== 'development',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'development' ? 'strict' : 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
@@ -58,7 +58,7 @@ const loginUser = async (req, res, next) => {
     res.cookie('jwt', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV !== 'development',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'development' ? 'strict' : 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
@@ -78,7 +78,7 @@ const logoutUser = (req, res) => {
     httpOnly: true,
     expires: new Date(0),
     secure: process.env.NODE_ENV !== 'development',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'development' ? 'strict' : 'none',
   });
 
   res.json({ message: 'Logged out successfully' });

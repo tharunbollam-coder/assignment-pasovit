@@ -11,11 +11,11 @@ const createOrder = async (req, res, next) => {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
+    // Check stock using populated data (no extra queries)
     for (const item of cart.items) {
-      const product = await Product.findById(item.product._id);
-      if (product.stock < item.qty) {
+      if (item.product.stock < item.qty) {
         return res.status(400).json({ 
-          message: `Insufficient stock for ${product.name}. Only ${product.stock} available.` 
+          message: `Insufficient stock for ${item.product.name}. Only ${item.product.stock} available.` 
         });
       }
     }
@@ -30,31 +30,39 @@ const createOrder = async (req, res, next) => {
 
     const totalPrice = orderItems.reduce((total, item) => total + (item.price * item.qty), 0);
 
-    const order = await Order.create({
-      user: req.user._id,
-      items: orderItems,
-      totalPrice
-    });
+    // Create order and update stock in parallel
+    const bulkUpdates = cart.items.map(item => ({
+      updateOne: {
+        filter: { _id: item.product._id },
+        update: { $inc: { stock: -item.qty } }
+      }
+    }));
 
-    for (const item of cart.items) {
-      await Product.findByIdAndUpdate(
-        item.product._id,
-        { $inc: { stock: -item.qty } }
-      );
-    }
-
-    await Cart.findOneAndUpdate(
-      { user: req.user._id },
-      { $set: { items: [] } }
-    );
+    const [order] = await Promise.all([
+      Order.create({
+        user: req.user._id,
+        items: orderItems,
+        totalPrice
+      }),
+      // Bulk update stock
+      Product.bulkWrite(bulkUpdates),
+      // Clear cart
+      Cart.findOneAndUpdate(
+        { user: req.user._id },
+        { $set: { items: [] } }
+      )
+    ]);
 
     const populatedOrder = await Order.findById(order._id).populate('user', 'name email');
 
-    try {
-      await sendOrderEmail(populatedOrder, populatedOrder.user);
-    } catch (emailError) {
-      console.error('Email sending failed:', emailError);
-    }
+    // Send email asynchronously (non-blocking)
+    setImmediate(async () => {
+      try {
+        await sendOrderEmail(populatedOrder, populatedOrder.user);
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+      }
+    });
 
     res.status(201).json(populatedOrder);
   } catch (error) {
